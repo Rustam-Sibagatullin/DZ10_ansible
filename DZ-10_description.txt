@@ -1,0 +1,199 @@
+# Выполенеие ДЗ-10 Первые шаги с Ansible
+
+1. копиурем https://gitlab.com/otus_linux/09-1-ansible 
+2. запускаем Vagrantfile:
+vagrant up
+
+запустится 3 машины, но задание выполним на prod-nginx-01.
+
+3. выполним команду:
+vagrant ssh-config
+
+
+rustam3@rustam3-HP-ProBook-6460b:~/ansible$ vagrant ssh-config
+Host prod-nginx-01
+  HostName 127.0.0.1
+  User vagrant
+  Port 2222
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentityFile /home/rustam3/ansible/.vagrant/machines/prod-nginx-01/virtualbox/private_key
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+Host prod-nginx-02
+  HostName 127.0.0.1
+  User vagrant
+  Port 2200
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentityFile /home/rustam3/ansible/.vagrant/machines/prod-nginx-02/virtualbox/private_key
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+Host staging-nginx-01
+  HostName 127.0.0.1
+  User vagrant
+  Port 2201
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentityFile /home/rustam3/ansible/.vagrant/machines/staging-nginx-01/virtualbox/private_key
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+интересуют значения IdentityFile.
+
+4. проверим настройки ansible
+
+rustam3@rustam3-HP-ProBook-6460b:~/ansible$ ansible --version
+ansible 2.9.6
+  config file = /etc/ansible/ansible.cfg
+  configured module search path = [u'/home/rustam3/.ansible/plugins/modules', u'/usr/share/ansible/plugins/modules']
+  ansible python module location = /usr/lib/python2.7/dist-packages/ansible
+  executable location = /usr/bin/ansible
+  python version = 2.7.17 (default, Nov  7 2019, 10:07:09) [GCC 9.2.1 20191008]
+
+rustam3@rustam3-HP-ProBook-6460b:~/ansible$ cat /etc/ansible/ansible.cfg
+# config file for ansible -- https://ansible.com/
+# ===============================================
+
+# nearly all parameters can be overridden in ansible-playbook
+# or with command line flags. ansible will read ANSIBLE_CONFIG,
+# ansible.cfg in the current working directory, .ansible.cfg in
+# the home directory or /etc/ansible/ansible.cfg, whichever it
+# finds first
+
+[defaults]
+
+# some basic default values...
+
+#inventory      = /etc/ansible/hosts
+
+
+5. правим файл /etc/ansible/hosts, добавив строки:
+
+prod-nginx-01 ansible_ssh_host=192.168.11.150 ansible_ssh_user=vagrant ansible_ssh_private_key_file=/home/rustam3/ansible/.vagrant/machines/prod-nginx-01/virtualbox/private_key
+prod-nginx-02 ansible_ssh_host=192.168.11.151 ansible_ssh_user=vagrant ansible_ssh_private_key_file=/home/rustam3/ansible/.vagrant/machines/prod-nginx-02/virtualbox/private_key
+
+
+
+6. создаем nginx.yaml файл (выставляем hosts: prod-nginx-01)
+
+---
+- name: NGINX | Install and configure NGINX
+  hosts: prod-nginx-01
+  become: true
+  vars:
+    nginx_listen_port: 8080
+
+  tasks:
+    - name: NGINX | Install EPEL Repo package from standart repo
+      yum:
+        name: epel-release
+        state: present
+      tags:
+        - epel-package
+        - packages
+
+    - name: NGINX | Install NGINX package from EPEL Repo
+      yum:
+        name: nginx
+        state: latest
+      notify:
+        - restart nginx
+      tags:
+        - nginx-package
+        - packages
+
+    - name: NGINX | Create NGINX config file from template
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+      notify:
+        - reload nginx
+      tags:
+        - nginx-configuration
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
+    
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+7. создаем файл templates/nginx.conf.j2:
+
+# {{ ansible_managed }}
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen       {{ nginx_listen_port }} default_server;
+        server_name  default_server;
+        root         /usr/share/nginx/html;
+
+        location / {
+        }
+    }
+}
+
+
+8. запускаем ansible c установкой nginx: ansible-playbook nginx.yml
+
+rustam3@rustam3-HP-ProBook-6460b:~/ansible$ ansible-playbook nginx.yml
+
+PLAY [NGINX | Install and configure NGINX] **************************************************************************************************************************************************
+
+TASK [Gathering Facts] **********************************************************************************************************************************************************************
+ok: [prod-nginx-01]
+
+TASK [NGINX | Install EPEL Repo package from standart repo] *********************************************************************************************************************************
+ok: [prod-nginx-01]
+
+TASK [NGINX | Install NGINX package from EPEL Repo] *****************************************************************************************************************************************
+ok: [prod-nginx-01]
+
+TASK [NGINX | Create NGINX config file from template] ***************************************************************************************************************************************
+changed: [prod-nginx-01]
+
+RUNNING HANDLER [reload nginx] **************************************************************************************************************************************************************
+changed: [prod-nginx-01]
+
+PLAY RECAP **********************************************************************************************************************************************************************************
+prod-nginx-01              : ok=5    changed=2    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+
+rustam3@rustam3-HP-ProBook-6460b:~/ansible$
+
+
+
+9. поверяем доступность web страницы:
+
+rustam3@rustam3-HP-ProBook-6460b:~/ansible$ curl http://192.168.11.150:8080
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <title>Welcome to CentOS</title>
+  <style rel="stylesheet" type="text/css">
+
+        html {
+        background-image:url(img/html-background.png);
+        background-color: white;
+        font-family: "DejaVu Sans", "Liberation Sans", sans-serif;
+
+10. проверяем доступность страницы по адресу: http://192.168.11.150:8080 
+
+
+
+
+
+
